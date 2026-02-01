@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>รายการสัญญา – Loan Payment System</title>
+  <link rel="stylesheet" href="css/main.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/index.js"></script>
+  <style>
+    .filter-bar {
+      display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .filter-bar .form-group { margin: 0; flex: 1; min-width: 180px; }
+    .filter-bar .form-group label { font-size: 12px; margin-bottom: 4px; }
+    .filter-bar input, .filter-bar select { padding: 9px 12px; font-size: 14px; }
+    .no-data { text-align:center; color:#94a3b8; padding:40px 20px; }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">💰</div>
+    <div><div class="logo-text">LoanPay</div><div class="logo-sub">ระบบผ่อนชำระ</div></div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="index.html"><span class="nav-icon">📊</span><span>แดชบอร์ด</span></a>
+    <a href="loan-form.html"><span class="nav-icon">📝</span><span>เพิ่มสัญญาใหม่</span></a>
+    <a href="loan-list.html" class="active"><span class="nav-icon">📋</span><span>รายการสัญญา</span></a>
+  </nav>
+</aside>
+
+<!-- Main -->
+<main class="main-content">
+
+  <div class="topbar">
+    <div>
+      <h1>📋 รายการสัญญา</h1>
+      <div class="topbar-subtitle">จัดการสัญญาเงินกู้ทั้งหมด</div>
+    </div>
+    <a href="loan-form.html" class="btn btn-primary">＋ เพิ่มสัญญา</a>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar">
+    <div class="form-group">
+      <label>ค้นหา (เลขสัญญา / ชื่อ)</label>
+      <input type="text" id="searchInput" placeholder="พิมพ์ค้นหา..." oninput="filterLoans()"/>
+    </div>
+    <div class="form-group" style="flex:0.5;">
+      <label>สถานะ</label>
+      <select id="statusFilter" onchange="filterLoans()">
+        <option value="">ทั้งหมด</option>
+        <option value="active">แบ่งจ่าย</option>
+        <option value="completed">เสร็จสิ้น</option>
+        <option value="overdue">ค้างชำระ</option>
+        <option value="cancelled">ยกเลิก</option>
+      </select>
+    </div>
+    <div class="form-group" style="flex:0.5;">
+      <label>แบบดอกเบี้ย</label>
+      <select id="typeFilter" onchange="filterLoans()">
+        <option value="">ทั้งหมด</option>
+        <option value="reducing">ลดต้นลดดอก</option>
+        <option value="flat">คงที่</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card">
+    <div class="card-header">
+      <h3>📄 รายการทั้งหมด <span id="loanCount" style="color:#64748b;font-weight:400;font-size:14px;">(กำลังโหลด…)</span></h3>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>เลขสัญญา</th>
+              <th>ชื่อผู้กู้</th>
+              <th>เงินกู้</th>
+              <th>ผ่อน/งวด</th>
+              <th>จำนวนงวด</th>
+              <th>แบบดอกเบี้ย</th>
+              <th>สถานะ</th>
+              <th>การดำเนินการ</th>
+            </tr>
+          </thead>
+          <tbody id="loanListBody">
+            <tr><td colspan="9" class="no-data">กำลังโหลดข้อมูล…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Scripts -->
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/calculator.js"></script>
+<script src="js/database.js"></script>
+<script>
+let allLoans = [];
+
+(async () => {
+  try {
+    allLoans = await DB.getAllLoans();
+    renderLoans(allLoans);
+  } catch (err) {
+    console.error(err);
+    Utils.showToast('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'error');
+  }
+})();
+
+// --- Filter ---
+function filterLoans() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const status = document.getElementById('statusFilter').value;
+  const type   = document.getElementById('typeFilter').value;
+
+  const filtered = allLoans.filter(l => {
+    const matchSearch = !search ||
+      l.contract_number.toLowerCase().includes(search) ||
+      l.customer_name.toLowerCase().includes(search);
+    const matchStatus = !status || l.status === status;
+    const matchType   = !type   || l.interest_type === type;
+    return matchSearch && matchStatus && matchType;
+  });
+
+  renderLoans(filtered);
+}
+
+// --- Render Loans ---
+function renderLoans(loans) {
+  const tbody = document.getElementById('loanListBody');
+  document.getElementById('loanCount').textContent = `(${loans.length} สัญญา)`;
+
+  if (loans.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="no-data">ไม่พบข้อมูลที่ตรงเกณฑ์</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = loans.map((loan, i) => {
+    const st = Utils.formatStatus(loan.status);
+    return `
+      <tr>
+        <td style="color:#94a3b8;">${i + 1}</td>
+        <td><strong style="color:var(--primary);">${loan.contract_number}</strong></td>
+        <td>${loan.customer_name}</td>
+        <td>${Utils.formatCurrency(loan.loan_amount)}</td>
+        <td>${Utils.formatCurrency(loan.monthly_payment)}</td>
+        <td>${loan.installments} งวด</td>
+        <td>${Utils.formatInterestType(loan.interest_type)}</td>
+        <td><span class="badge" style="color:${st.color};background:${st.bg};">${st.label}</span></td>
+        <td>
+          <div class="actions">
+            <a href="loan-detail.html?id=${loan.id}" class="btn btn-primary btn-sm">ดูรายละเอียด</a>
+            <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="deleteLoan('${loan.id}')">ลบ</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// --- Delete Loan ---
+async function deleteLoan(id) {
+  const ok = await Utils.confirmDialog('คุณต้องการลบสัญญานี้ไหม? (จะเปลี่ยนสถานะเป็น ยกเลิก)', 'ยืนยันการลบ');
+  if (!ok) return;
+  try {
+    await DB.deleteLoan(id);
+    Utils.showToast('ยกเลิกสัญญาสำเร็จ', 'success');
+    allLoans = await DB.getAllLoans();
+    renderLoans(allLoans);
+  } catch (err) {
+    Utils.showToast('เกิดข้อผิดพลาด: ' + err.message, 'error');
+  }
+}
+</script>
+
+</body>
+</html>
